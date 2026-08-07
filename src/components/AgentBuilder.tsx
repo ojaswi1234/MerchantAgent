@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAgentStore } from '../store';
 import { Button, Textarea, Card, CardContent } from './ui';
-import { Bot, Sparkles, MessageSquare } from 'lucide-react';
+import { Bot, Sparkles, MessageSquare, Clock, ArrowRight, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import AnimatedTitle from './AnimatedTitle';
 import { motion } from 'motion/react';
 
 const EXAMPLES = [
-  { text: "When a subscription payment fails, wait 2 hours and send a friendly WhatsApp reminder with a payment link.", color: "bg-[#4ECDC4]" },
-  { text: "If a high-value cart (>$100) is abandoned for 1 hour, send an email with a 10% discount code.", color: "bg-[#FF6B6B]" },
-  { text: "When a new dispute is created on Razorpay, immediately notify the merchant on WhatsApp and email the customer to clarify.", color: "bg-[#FFE66D]" },
-  { text: "Send a payment reminder via SMS 3 days before the due date for all unpaid invoices.", color: "bg-[#3B82F6]" },
+  { title: "Subscription Recovery", text: "When a subscription payment fails, wait 2 hours and send a friendly WhatsApp reminder with a payment link.", color: "bg-[#4ECDC4]" },
+  { title: "Abandoned Cart", text: "If a high-value cart (>$100) is abandoned for 1 hour, send an email with a 10% discount code.", color: "bg-[#FF6B6B]" },
+  { title: "Dispute Alert", text: "When a new dispute is created on Razorpay, immediately notify the merchant on WhatsApp and email the customer to clarify.", color: "bg-[#FFE66D]" },
+  { title: "Payment Reminder", text: "Send a payment reminder via SMS 3 days before the due date for all unpaid invoices.", color: "bg-[#3B82F6]" },
 ];
 
 export default function AgentBuilder({ onGenerated }: { onGenerated: () => void }) {
@@ -18,6 +18,8 @@ export default function AgentBuilder({ onGenerated }: { onGenerated: () => void 
   const [isGenerating, setIsGenerating] = useState(false);
   const [placeholder, setPlaceholder] = useState('');
   const addAgent = useAgentStore((state) => state.addAgent);
+  const agents = useAgentStore((state) => state.agents);
+  const setCurrentAgent = useAgentStore((state) => state.setCurrentAgent);
   const chipsRef = useRef<HTMLDivElement>(null);
 
   const placeholders = [
@@ -95,7 +97,7 @@ export default function AgentBuilder({ onGenerated }: { onGenerated: () => void 
         headers: { 
           'Content-Type': 'application/json',
           'x-groq-api-key': localStorage.getItem('groq_api_key') || '',
-          'x-groq-model': localStorage.getItem('groq_model') || 'llama-3.1-70b-versatile'
+          'x-groq-model': localStorage.getItem('groq_model') || 'llama-3.3-70b-versatile'
         },
         body: JSON.stringify({ prompt }),
       });
@@ -155,13 +157,25 @@ export default function AgentBuilder({ onGenerated }: { onGenerated: () => void 
             onClick={() => setPrompt(example.text)}
             className={`rounded-full px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold text-black border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:translate-x-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all ${example.color}`}
           >
-            Template {i + 1}
+            {example.title}
           </motion.button>
         ))}
       </motion.div>
 
-      <Card className="shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-        <CardContent className="p-0 flex flex-col">
+      <Card className={`shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transition-opacity duration-300 ${isGenerating ? 'opacity-80 pointer-events-none' : ''}`}>
+        <CardContent className="p-0 flex flex-col relative overflow-hidden">
+          {isGenerating && (
+            <motion.div 
+              className="absolute inset-0 bg-white/50 dark:bg-black/50 z-10 flex items-center justify-center backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <div className="flex flex-col items-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#FF6B6B] border-t-transparent mb-4" />
+                <p className="font-bold text-lg animate-pulse text-black dark:text-white">Crafting Agent Configuration...</p>
+              </div>
+            </motion.div>
+          )}
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -193,6 +207,55 @@ export default function AgentBuilder({ onGenerated }: { onGenerated: () => void 
           </div>
         </CardContent>
       </Card>
+
+      {agents.length > 0 && (
+        <div className="space-y-4 pt-4 sm:pt-8">
+          <h3 className="text-xl sm:text-2xl font-black text-black dark:text-white flex items-center">
+            <Clock className="w-6 h-6 mr-2 text-[#FF6B6B]" />
+            Recent Agents
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {agents.slice(0, 3).map((agent, i) => (
+              <motion.div
+                key={agent.id || i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+              >
+                <Card 
+                  className="shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-all cursor-pointer h-full border-2 border-black"
+                  onClick={() => {
+                    setCurrentAgent(agent);
+                    onGenerated();
+                  }}
+                >
+                  <CardContent className="p-4 sm:p-5 flex flex-col h-full justify-between">
+                    <div>
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="font-bold text-lg leading-tight line-clamp-1">{agent.name}</h4>
+                        <div className={`p-1.5 rounded-lg border-2 border-black shrink-0 ml-2 ${
+                          agent.trigger.type === 'payment_failed' ? 'bg-[#FF6B6B]' :
+                          agent.trigger.type === 'abandoned_cart' ? 'bg-[#4ECDC4]' :
+                          agent.trigger.type === 'dispute_created' ? 'bg-[#FFE66D]' :
+                          'bg-[#3B82F6]'
+                        }`}>
+                          <Bot className="w-4 h-4 text-black" />
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400 line-clamp-2 mb-4">
+                        {agent.description}
+                      </p>
+                    </div>
+                    <div className="flex items-center text-sm font-bold text-[#FF6B6B] mt-auto">
+                      View Agent <ArrowRight className="w-4 h-4 ml-1" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -62,7 +62,7 @@ export default function App() {
               onClick={() => setView('builder')} 
               className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm sm:text-base font-bold transition-all border-2 ${view === 'builder' ? 'bg-[#FFE66D] border-black text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'}`}
             >
-              Builder
+              New Agent
             </button>
             {currentAgent && (
               <button 

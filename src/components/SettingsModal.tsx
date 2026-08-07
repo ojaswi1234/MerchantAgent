@@ -12,12 +12,12 @@ export default function SettingsModal({
   isFirstLoad?: boolean;
 }) {
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('llama-3.1-70b-versatile');
+  const [model, setModel] = useState('llama-3.3-70b-versatile');
 
   useEffect(() => {
     if (isOpen) {
       setApiKey(localStorage.getItem('groq_api_key') || '');
-      setModel(localStorage.getItem('groq_model') || 'llama-3.1-70b-versatile');
+      setModel(localStorage.getItem('groq_model') || 'llama-3.3-70b-versatile');
     }
   }, [isOpen]);
 
@@ -148,10 +148,8 @@ export default function SettingsModal({
               onChange={(e) => setModel(e.target.value)}
               className="flex h-12 w-full rounded-xl border-2 border-black bg-white px-4 py-2 text-base font-medium shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[#3B82F6] dark:bg-[#252830] dark:text-white transition-colors cursor-pointer"
             >
-              <option value="llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
+              <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
               <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
-              <option value="llama3-70b-8192">Llama 3 70B</option>
-              <option value="llama3-8b-8192">Llama 3 8B</option>
               <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
               <option value="gemma2-9b-it">Gemma 2 9B</option>
             </select>

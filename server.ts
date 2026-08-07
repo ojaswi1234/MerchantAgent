@@ -22,7 +22,7 @@ async function startServer() {
       }
 
       const groq = new Groq({ apiKey: apiKey as string });
-      const model = (req.headers['x-groq-model'] as string) || "llama-3.1-70b-versatile";
+      const model = (req.headers['x-groq-model'] as string) || "llama-3.3-70b-versatile";
       
       const { prompt } = req.body;
       if (!prompt) {
@@ -103,7 +103,7 @@ SCHEMA:
       }
 
       const groq = new Groq({ apiKey: apiKey as string });
-      const model = (req.headers['x-groq-model'] as string) || "llama-3.1-70b-versatile";
+      const model = (req.headers['x-groq-model'] as string) || "llama-3.3-70b-versatile";
 
       const { agentConfig, simulationData } = req.body;
       if (!agentConfig || !simulationData) {

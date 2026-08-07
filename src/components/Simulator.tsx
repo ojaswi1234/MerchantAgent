@@ -30,7 +30,7 @@ export default function Simulator({ onBack }: { onBack: () => void }) {
         headers: { 
           'Content-Type': 'application/json',
           'x-groq-api-key': localStorage.getItem('groq_api_key') || '',
-          'x-groq-model': localStorage.getItem('groq_model') || 'llama-3.1-70b-versatile'
+          'x-groq-model': localStorage.getItem('groq_model') || 'llama-3.3-70b-versatile'
         },
         body: JSON.stringify({ agentConfig: currentAgent, simulationData: parsedData }),
       });
