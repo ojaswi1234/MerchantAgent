@@ -1,0 +1,6 @@
+{
+  "name": "MerchantAgent Builder",
+  "description": "AI Agent Builder for Merchants to convert plain English descriptions into payment workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
