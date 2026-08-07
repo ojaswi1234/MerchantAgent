@@ -19,7 +19,7 @@ const AgentConfigSchema = z.object({
     conditions: z.array(z.string()).describe("Array of realistic condition strings (e.g. 'amount > 500')")
   }),
   actions: z.array(z.object({
-    type: z.enum(["send_whatsapp", "create_payment_link", "retry_payment", "send_email", "notify_merchant"]),
+    type: z.enum(["send_whatsapp", "send_sms", "create_payment_link", "retry_payment", "send_email", "notify_merchant"]),
     config: z.record(z.string(), z.any()).describe("Optional meaningful configuration, e.g., delay or template")
   })),
   message_template: z.string().describe("Rich, personalized message template with {{variables}}"),
