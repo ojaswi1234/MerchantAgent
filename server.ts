@@ -3,9 +3,140 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import Groq from 'groq-sdk';
 import dotenv from 'dotenv';
+import { z } from "zod";
+import { ChatGroq } from "@langchain/groq";
+import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 
 // Load environment variables
 dotenv.config();
+
+// --- LangGraph Agent Schema & Setup ---
+const AgentConfigSchema = z.object({
+  name: z.string().describe("Creative and descriptive name of the agent"),
+  description: z.string().describe("Short description of the agent's purpose"),
+  trigger: z.object({
+    type: z.enum(["payment_failed", "subscription_failed", "cart_abandoned", "dispute_created"]),
+    conditions: z.array(z.string()).describe("Array of realistic condition strings (e.g. 'amount > 500')")
+  }),
+  actions: z.array(z.object({
+    type: z.enum(["send_whatsapp", "create_payment_link", "retry_payment", "send_email", "notify_merchant"]),
+    config: z.record(z.string(), z.any()).describe("Optional meaningful configuration, e.g., delay or template")
+  })),
+  message_template: z.string().describe("Rich, personalized message template with {{variables}}"),
+  guardrails: z.object({
+    max_retries: z.number(),
+    allowed_channels: z.array(z.string())
+  })
+});
+
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+const AgentStateAnnotation = Annotation.Root({
+  userPrompt: Annotation<string>(),
+  config: Annotation<AgentConfig | null>({
+    default: () => null,
+    reducer: (state, update) => update ?? state,
+  }),
+  validationIssues: Annotation<string[]>({
+    default: () => [],
+    reducer: (state, update) => update ?? state,
+  }),
+  iterations: Annotation<number>({
+    default: () => 0,
+    reducer: (state, update) => state + update,
+  })
+});
+
+function createAgentGraph(apiKey: string, modelName: string) {
+  const llm = new ChatGroq({
+    apiKey: apiKey,
+    model: modelName,
+    temperature: 0.2,
+  });
+
+  const structuredLlm = llm.withStructuredOutput(AgentConfigSchema);
+
+  // 1. Generate Node
+  const generateConfig = async (state: typeof AgentStateAnnotation.State) => {
+    const prompt = `You are an expert AI configuration assistant for merchants and fintech workflows.
+Convert the following merchant request into a strictly structured AI agent configuration JSON.
+Make sure the trigger type is one of the allowed enums.
+Provide a rich personalized message_template and meaningful action configs.
+
+Merchant Request: ${state.userPrompt}`;
+
+    const config = await structuredLlm.invoke(prompt);
+    return { config, iterations: 1 };
+  };
+
+  // 2. Validate Node
+  const validateConfig = async (state: typeof AgentStateAnnotation.State) => {
+    const config = state.config;
+    if (!config) return { validationIssues: ["No config generated"] };
+
+    const issues: string[] = [];
+    
+    if (!config.name || !config.description) {
+      issues.push("Missing name or description.");
+    }
+    if (!config.message_template || config.message_template.length < 10) {
+      issues.push("Message template is too weak or generic. Needs more detail and {{variables}}.");
+    }
+    if (config.actions.length === 0) {
+      issues.push("Must have at least one action.");
+    }
+    
+    // Check illogical combinations
+    const trigger = config.trigger.type;
+    const hasWhatsApp = config.actions.some(a => a.type === "send_whatsapp");
+    const hasEmail = config.actions.some(a => a.type === "send_email");
+    if (!hasWhatsApp && !hasEmail && trigger === "cart_abandoned") {
+      issues.push("Cart abandoned trigger should probably send a message (whatsapp or email).");
+    }
+
+    return { validationIssues: issues };
+  };
+
+  // 3. Improve Node
+  const improveConfig = async (state: typeof AgentStateAnnotation.State) => {
+    const prompt = `You are an expert AI configuration assistant.
+The previously generated configuration has some issues. Please fix them.
+
+Original Merchant Request: ${state.userPrompt}
+Current Config: ${JSON.stringify(state.config, null, 2)}
+Validation Issues to fix:
+${state.validationIssues.map(i => "- " + i).join("\\n")}
+
+Generate an improved configuration that strictly fixes these issues.`;
+
+    const config = await structuredLlm.invoke(prompt);
+    return { config, iterations: 1 };
+  };
+
+  // Edges
+  const shouldImprove = (state: typeof AgentStateAnnotation.State) => {
+    if (state.validationIssues.length > 0 && state.iterations < 3) {
+      return "improve";
+    }
+    return "finalize";
+  };
+
+  const workflow = new StateGraph(AgentStateAnnotation)
+    .addNode("generate", generateConfig)
+    .addNode("validate", validateConfig)
+    .addNode("improve", improveConfig)
+    .addNode("finalize", async (state) => state) // No-op node for clarity
+    .addEdge(START, "generate")
+    .addEdge("generate", "validate")
+    .addConditionalEdges("validate", shouldImprove, {
+      improve: "improve",
+      finalize: "finalize"
+    })
+    .addEdge("improve", "validate")
+    .addEdge("finalize", END);
+
+  return workflow.compile();
+}
 
 async function startServer() {
   const app = express();
@@ -21,72 +152,29 @@ async function startServer() {
         throw new Error("GROQ_API_KEY is missing. Please provide it in settings.");
       }
 
-      const groq = new Groq({ apiKey: apiKey as string });
-      const model = (req.headers['x-groq-model'] as string) || "llama-3.3-70b-versatile";
+      const modelName = (req.headers['x-groq-model'] as string) || "llama-3.3-70b-versatile";
       
       const { prompt } = req.body;
       if (!prompt) {
         return res.status(400).json({ error: "Prompt is required" });
       }
 
-      const response = await groq.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert AI configuration assistant for merchants and fintech workflows.
-Your sole purpose is to convert a merchant's plain English request for an automation workflow into a strictly structured AI agent configuration JSON.
-
-CRITICAL INSTRUCTIONS:
-1. You MUST output ONLY valid JSON.
-2. The JSON MUST exactly match the provided schema.
-3. For the trigger.type, you MUST choose one of: payment_failed | subscription_failed | cart_abandoned | dispute_created.
-4. For actions[].type, you MUST choose from: send_whatsapp | create_payment_link | retry_payment | send_email | notify_merchant.
-5. Create a personalized and professional message_template using {{variables}} that fits the context of the workflow.
-6. The output JSON must not contain markdown blocks, backticks, or any other text before or after the JSON itself.
-
-SCHEMA:
-{
-  "name": "Agent Name",
-  "description": "Short description of the agent",
-  "trigger": {
-    "type": "One of: payment_failed | subscription_failed | cart_abandoned | dispute_created",
-    "conditions": ["Conditions for the trigger (e.g. 'amount > 500', 'status == unpaid')"]
-  },
-  "actions": [
-    {
-      "type": "One of: send_whatsapp | create_payment_link | retry_payment | send_email | notify_merchant",
-      "config": {
-        "delay": "Optional delay before action",
-        "template": "Optional template name"
-      }
-    }
-  ],
-  "message_template": "Personalized message template with {{variables}}",
-  "guardrails": {
-    "max_retries": 3,
-    "allowed_channels": ["sms", "email"]
-  }
-}`
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      let jsonOutput = response.choices[0]?.message?.content || "{}";
+      const graph = createAgentGraph(apiKey as string, modelName);
       
-      // Attempt to parse JSON safely in case of minor structure issues
-      try {
-        const config = JSON.parse(jsonOutput);
-        res.json({ config });
-      } catch (parseError) {
-        console.error("Failed to parse Groq output:", jsonOutput);
-        res.status(500).json({ error: "Failed to parse agent configuration" });
+      const initialState = {
+        userPrompt: prompt,
+        config: null,
+        validationIssues: [],
+        iterations: 0
+      };
+
+      const finalState = await graph.invoke(initialState);
+
+      if (!finalState.config) {
+        return res.status(500).json({ error: "Failed to generate a valid configuration" });
       }
+
+      res.json({ config: finalState.config });
       
     } catch (err: any) {
       console.error(err);
